@@ -50,21 +50,40 @@ def get_api_key():
 @st.cache_data(ttl=86400)
 def fetch_business(api_key: str, kind: str, num_rows: int = 1000) -> pd.DataFrame:
     """
-    동물생산업 / 동물판매업 조회 (행정안전부 표준데이터 오픈API)
+    동물생산업 / 동물판매업 조회 (행정안전부 조회서비스 오픈API)
     kind: 'production'(생산업) | 'sales'(판매업)
-    ※ 신청 승인 후 발급되는 본인 고유 엔드포인트(uddi)로 아래 주소를 교체하세요.
+    구조: End Point 뒤에 세부기능명을 붙여 호출. 응답은 JSON.
     """
-    endpoints = {
-        "production": "https://api.odcloud.kr/api/15107030/v1/uddi:동물생산업-엔드포인트",
-        "sales": "https://api.odcloud.kr/api/15106987/v1/uddi:동물판매업-엔드포인트",
+    # End Point + 세부기능명 (data.go.kr 상세화면 기준)
+    services = {
+        "production": "https://apis.data.go.kr/1741000/animal_breeding/animal_breeding",
+        "sales":      "https://apis.data.go.kr/1741000/animal_sales/animal_sales",
     }
-    url = endpoints.get(kind)
-    params = {"serviceKey": api_key, "page": 1, "perPage": num_rows, "returnType": "JSON"}
+    url = services.get(kind)
+    params = {
+        "serviceKey": api_key,
+        "pageNo": 1,
+        "numOfRows": num_rows,
+        "resultType": "json",   # 일부 서비스는 'type' 또는 '_type' 사용
+    }
     try:
         res = requests.get(url, params=params, timeout=15)
         res.raise_for_status()
-        data = res.json()
-        items = data.get("data", [])
+        try:
+            data = res.json()
+        except ValueError:
+            st.warning(f"{'생산업' if kind=='production' else '판매업'}: JSON이 아닌 응답이 왔습니다. "
+                       f"응답 일부: {res.text[:200]}")
+            return pd.DataFrame()
+        # 응답 구조 자동 탐색 (기관마다 body/items 위치가 조금씩 다름)
+        body = data.get("response", {}).get("body", data.get("body", data))
+        items = (body.get("items", {}) if isinstance(body, dict) else {})
+        if isinstance(items, dict):
+            items = items.get("item", [])
+        if isinstance(items, dict):
+            items = [items]
+        if not items and isinstance(body, dict):
+            items = body.get("item", [])
         return pd.DataFrame(items) if items else pd.DataFrame()
     except Exception as e:
         st.warning(f"{'생산업' if kind=='production' else '판매업'} 데이터 조회 실패: {e}")
@@ -74,10 +93,10 @@ def fetch_business(api_key: str, kind: str, num_rows: int = 1000) -> pd.DataFram
 @st.cache_data(ttl=3600)
 def fetch_rescued(api_key: str, sido_cd: str = "", begin: str = "", end: str = "",
                   num_rows: int = 500) -> pd.DataFrame:
-    """유기·유실동물(구조동물) 조회 - 농림축산검역본부 (표준 엔드포인트, 교체 불필요)"""
-    url = "https://apis.data.go.kr/1543061/abandonmentPublicSrvc/abandonmentPublic"
-    params = {"serviceKey": api_key, "numOfRows": num_rows, "pageNo": 1,
-              "_type": "json", "state": "notice"}
+    """유기·유실동물(구조동물) 조회 - 농림축산검역본부 (표준 엔드포인트)"""
+    url = "https://apis.data.go.kr/1543061/abandonmentPublicService_v2/abandonmentPublic_v2"
+    params = {"serviceKey": api_key, "numOfRows": num_rows, "pageNo": 1, "_type": "json"}
+    # state(공고상태)는 생략 — 일부 조합에서 500을 유발. 기간/지역만으로 조회
     if sido_cd:
         params["upr_cd"] = sido_cd
     if begin:
@@ -87,8 +106,14 @@ def fetch_rescued(api_key: str, sido_cd: str = "", begin: str = "", end: str = "
     try:
         res = requests.get(url, params=params, timeout=15)
         res.raise_for_status()
-        data = res.json()
-        items = data.get("response", {}).get("body", {}).get("items", {}).get("item", [])
+        try:
+            data = res.json()
+        except ValueError:
+            st.warning(f"유기·유실동물: JSON이 아닌 응답. 응답 일부: {res.text[:200]}")
+            return pd.DataFrame()
+        items = data.get("response", {}).get("body", {}).get("items", {})
+        if isinstance(items, dict):
+            items = items.get("item", [])
         if isinstance(items, dict):
             items = [items]
         return pd.DataFrame(items) if items else pd.DataFrame()
