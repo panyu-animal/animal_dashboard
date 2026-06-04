@@ -54,10 +54,10 @@ def fetch_business(api_key: str, kind: str, num_rows: int = 1000) -> pd.DataFram
     kind: 'production'(생산업) | 'sales'(판매업)
     구조: End Point 뒤에 세부기능명을 붙여 호출. 응답은 JSON.
     """
-    # End Point + 세부기능명 (data.go.kr 상세화면 기준)
+    # End Point (data.go.kr 상세화면 기준, 세부기능명 중복 없이)
     services = {
-        "production": "https://apis.data.go.kr/1741000/animal_breeding/animal_breeding",
-        "sales":      "https://apis.data.go.kr/1741000/animal_sales/animal_sales",
+        "production": "https://apis.data.go.kr/1741000/animal_breeding",
+        "sales":      "https://apis.data.go.kr/1741000/animal_sales",
     }
     url = services.get(kind)
     params = {
