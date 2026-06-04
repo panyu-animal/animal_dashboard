@@ -64,16 +64,19 @@ def fetch_business(api_key: str, kind: str, num_rows: int = 1000) -> pd.DataFram
         "serviceKey": api_key,
         "pageNo": 1,
         "numOfRows": num_rows,
-        "resultType": "json",   # 일부 서비스는 'type' 또는 '_type' 사용
+        "type": "json",
     }
+    label = "생산업" if kind == "production" else "판매업"
     try:
         res = requests.get(url, params=params, timeout=15)
-        res.raise_for_status()
+        # 오류여도 응답 본문에 원인이 담겨 있으므로 먼저 확인
+        if res.status_code != 200:
+            st.warning(f"{label} 응답 코드 {res.status_code}. 서버 메시지: {res.text[:300]}")
+            return pd.DataFrame()
         try:
             data = res.json()
         except ValueError:
-            st.warning(f"{'생산업' if kind=='production' else '판매업'}: JSON이 아닌 응답이 왔습니다. "
-                       f"응답 일부: {res.text[:200]}")
+            st.warning(f"{label}: JSON이 아닌 응답. 응답 일부: {res.text[:300]}")
             return pd.DataFrame()
         # 응답 구조 자동 탐색 (기관마다 body/items 위치가 조금씩 다름)
         body = data.get("response", {}).get("body", data.get("body", data))
@@ -86,7 +89,7 @@ def fetch_business(api_key: str, kind: str, num_rows: int = 1000) -> pd.DataFram
             items = body.get("item", [])
         return pd.DataFrame(items) if items else pd.DataFrame()
     except Exception as e:
-        st.warning(f"{'생산업' if kind=='production' else '판매업'} 데이터 조회 실패: {e}")
+        st.warning(f"{label} 데이터 조회 실패: {e}")
         return pd.DataFrame()
 
 
